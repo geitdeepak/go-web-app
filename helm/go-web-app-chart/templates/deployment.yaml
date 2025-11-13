@@ -17,6 +17,6 @@ spec:
     spec:
       containers:
       - name: go-web-app
-        image: deepaktyagi83/go-we-app:v1
+        image: deepaktyagi83/go-web-app:{{.Values.image.tag}}
         ports:
         - containerPort: 8080
