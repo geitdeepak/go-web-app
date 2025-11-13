@@ -4,11 +4,11 @@ on:
   push:
     branches:
       - main
-  paths-ignore:
-    - 'README.md'
-    - 'helm/**'
+    paths-ignore:
+      - 'README.md'
+      - 'helm/**'
 
-# Give repo write permission so we can push updated helm values back
+# Give repo write permission so the workflow can push updated helm values back
 permissions:
   contents: write
 
@@ -84,7 +84,7 @@ jobs:
 
       - name: Update tag in Helm chart values.yaml
         run: |
-          # replace the tag: line with the new tag (github.run_id expanded by GH)
+          # Update the "tag:" line in values.yaml to the current run id
           sed -i "s/^tag: .*/tag: \"${{ github.run_id }}\"/" helm/go-web-app-chart/values.yaml
           echo "Updated helm/go-web-app-chart/values.yaml:"
           sed -n '1,200p' helm/go-web-app-chart/values.yaml
@@ -94,7 +94,6 @@ jobs:
           git config --global user.email "geit.deepak@gmail.com"
           git config --global user.name "Deepak Kumar Tyagi"
           git add helm/go-web-app-chart/values.yaml
-          # Only commit if there are changes
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
