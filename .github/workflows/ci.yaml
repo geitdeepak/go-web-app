@@ -80,7 +80,7 @@ jobs:
       - name: Checkout repository (with token for push)
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TOKEN }}
 
       - name: Update tag in Helm chart values.yaml
         run: |
