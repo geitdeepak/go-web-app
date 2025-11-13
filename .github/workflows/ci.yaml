@@ -4,13 +4,18 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - 'README.md'
-      - 'helm/**'
+  paths-ignore:
+    - 'README.md'
+    - 'helm/**'
 
-# Give repo write permission so the workflow can push updated helm values back
 permissions:
   contents: write
+  packages: write
+
+env:
+  # Pick a stable Go version matching your go.mod requirement
+  GO_VERSION: '1.22.5'
+  IMAGE_NAME: ${{ secrets.DOCKER_HUB_USERNAME }}/go-web-app
 
 jobs:
   build:
@@ -24,28 +29,37 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.22'
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Prepare module proxy & download deps
+        run: |
+          go env -w GOPROXY=https://proxy.golang.org,direct
+          go mod download
 
       - name: Build
-        run: go build ./...
+        run: |
+          # adjust path if your module is in subfolder (example: ./go-web-app)
+          go build ./...
 
-      - name: Test
-        run: go test ./...
+      - name: Run tests
+        run: |
+          go test ./...
 
-    code-quality:
+  code-quality:
     name: Code Quality (golangci-lint)
     runs-on: ubuntu-latest
+    needs: build
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Go for linting
+      - name: Set up Go (for linter)
         uses: actions/setup-go@v4
         with:
-          go-version: '1.22.5'     # match the Go version you use in build / go.mod
+          go-version: ${{ env.GO_VERSION }}
 
-      - name: Install modules (optional but helpful)
+      - name: Install dependencies
         run: |
           go env -w GOPROXY=https://proxy.golang.org,direct
           go mod download
@@ -54,10 +68,11 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: v1.56.2
+          # if your code lives in a subfolder, use working-dir
+          # working-dir: ./go-web-app
 
-
-  push:
-    name: Build & Push Docker Image
+  push-image:
+    name: Build & Push Docker image
     runs-on: ubuntu-latest
     needs: [build, code-quality]
 
@@ -65,8 +80,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v2
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -80,34 +98,38 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ secrets.DOCKER_HUB_USERNAME }}/go-web-app:${{ github.run_id }}
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.run_id }}
 
-  update-newtag-in-helm-chart:
-    name: Update Helm Chart Tag & Commit
+      - name: Set output image tag
+        id: tag
+        run: echo "IMAGE_TAG=${{ github.run_id }}" >> $GITHUB_OUTPUT
+
+  update-helm-chart:
+    name: Update Helm chart tag and push
     runs-on: ubuntu-latest
-    needs: push
-
+    needs: push-image
     steps:
-      - name: Checkout repository (with token for push)
+      - name: Checkout repository (with token)
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.TOKEN }}
 
-      - name: Update tag in Helm chart values.yaml
+      - name: Update image tag in Helm values
         run: |
-          # Update the "tag:" line in values.yaml to the current run id
-          sed -i "s/^tag: .*/tag: \"${{ github.run_id }}\"/" helm/go-web-app-chart/values.yaml
-          echo "Updated helm/go-web-app-chart/values.yaml:"
-          sed -n '1,200p' helm/go-web-app-chart/values.yaml
-
-      - name: Commit and push changes
-        run: |
-          git config --global user.email "geit.deepak@gmail.com"
-          git config --global user.name "Deepak Kumar Tyagi"
+          TAG=${{ needs.push-image.outputs.IMAGE_TAG }}
+          echo "Updating Helm values with tag: $TAG"
+          # adjust path to your chart values file
+          sed -i "s/\(tag:\s*\).*/\1\"${TAG}\"/" helm/go-web-app-chart/values.yaml
+          git status --porcelain
           git add helm/go-web-app-chart/values.yaml
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "chore(ci): update helm chart image tag to ${{ github.run_id }}"
-            git push origin HEAD:main
-          fi
+          git -c user.email="ci-bot@example.com" -c user.name="CI Bot" commit -m "chore(ci): update helm image tag to ${TAG}" || echo "No changes to commit"
+
+      - name: Push Helm values update
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+        run: |
+          # push changes back to main (only if commit happened)
+          git push origin HEAD:main || echo "Push failed or nothing to push"
+
