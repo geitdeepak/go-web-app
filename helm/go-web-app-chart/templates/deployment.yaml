@@ -3,10 +3,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: go-web-app
+  namespace: {{ .Release.Namespace }}
   labels:
     app: go-web-app
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount | default 1 }}
   selector:
     matchLabels:
       app: go-web-app
@@ -16,7 +17,7 @@ spec:
         app: go-web-app
     spec:
       containers:
-      - name: go-web-app
-        image: deepaktyagi83/go-web-app:{{.Values.image.tag}}
-        ports:
-        - containerPort: 8080
+        - name: go-web-app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.service.targetPort | default 8080 }}
