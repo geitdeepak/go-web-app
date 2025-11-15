@@ -4,7 +4,7 @@ image:
   repository: deepaktyagi83/go-web-app
   pullPolicy: IfNotPresent
   # CI should update this string to the image tag (use quotes)
-  tag: "19384940812"
+  tag: "19385139910"
 
 ingress:
   enabled: true
